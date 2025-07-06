@@ -9,7 +9,7 @@
 -   **易于配置**: 为了安全地使用您的 bark，我们不把它们直接写在代码里，而是使用 GitHub 的 "Secrets" 功能。
 -   **易于部署**: 可以轻松地作为定时任务 (Cron Job) 或通过 GitHub Actions 自动化运行。
 
-## barktoken获取
+## bark token获取
 在您的 iPhone 或 Android 手机上，从 App Store 或应用市场搜索并下载 Bark App。
 
 打开 App，您会看到一个 URL 地址，格式类似于 。https://api.day.app/YOUR_KEY/这里是推送内容
@@ -34,7 +34,16 @@
 
 Secret: 粘贴您在第一步中从 Bark App 获取的 Key。
 
+再创建一个新的 Secret：
+
+名称：BARK_SERVER_URL
+
+如果用官方的地址填写: https://api.day.app
+
+有自建的bark服务器，请填写自己的地址。
+
 ## 完成与测试
+
 一切都已准备就绪。 GitHub Actions 会在您设定的时间自动运行。
 
 如果您想立刻测试，可以和之前一样，进入仓库的 Actions 标签页，手动触发 "Check Serv00 Registration Status" 工作流。
