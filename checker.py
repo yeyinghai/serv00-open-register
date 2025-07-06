@@ -101,4 +101,5 @@ def check_serv00_status():
 
 
 if __name__ == "__main__":
+send_bark_notification("测试发送bark", "每次运行都发送", URL)
     check_serv00_status()
