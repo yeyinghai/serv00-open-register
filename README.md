@@ -1,4 +1,4 @@
-# WebSite-Check Bot
+# serv00开放注册通知
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
@@ -6,10 +6,15 @@
 
 ## ✨ 特性
 
--   **易于配置**: 为了安全地使用您的 Telegram Bot Token 和 Chat ID，我们不把它们直接写在代码里，而是使用 GitHub 的 "Secrets" 功能。
+-   **易于配置**: 为了安全地使用您的 bark，我们不把它们直接写在代码里，而是使用 GitHub 的 "Secrets" 功能。
 -   **易于部署**: 可以轻松地作为定时任务 (Cron Job) 或通过 GitHub Actions 自动化运行。
 
+## barktoken获取
+在您的 iPhone 或 Android 手机上，从 App Store 或应用市场搜索并下载 Bark App。
 
+打开 App，您会看到一个 URL 地址，格式类似于 。https://api.day.app/YOUR_KEY/这里是推送内容
+
+其中， 就是您独一无二的 Bark Key。 请复制并安全保存它。 之后我们发送的任何通知都会推送到安装了这个 App 并使用此 Key 的设备上。YOUR_KEY
 
 ## 🚀 说明
 
