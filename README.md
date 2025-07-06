@@ -3,7 +3,9 @@
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
 一个简单而机器人，用于serv00网站的注册开放情况。它会自动检查开放注册后，通过bark发送警报。
+Fork 或创建仓库
 
+加⭐收藏本项目，然后将此仓库 Fork 到你的 GitHub 账号。
 ## ✨ 特性
 
 -   **易于配置**: 为了安全地使用您的 bark，我们不把它们直接写在代码里，而是使用 GitHub 的 "Secrets" 功能。
