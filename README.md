@@ -46,7 +46,7 @@ Secret: 粘贴您在第一步中从 Bark App 获取的 Key。
 
 一切都已准备就绪。 GitHub Actions 会在您设定的时间自动运行。
 
-如果您想立刻测试，可以和之前一样，进入仓库的 Actions 标签页，手动触发 "Check Serv00 Registration Status" 工作流。
+如果您想立刻测试，可以和之前一样，进入仓库的 Actions 标签页，手动触发 "检测Serv00开放注册" 工作流。
 
 如果脚本检测到注册开放，您的手机将会收到一条来自 Bark 的推送通知，点击该通知会直接跳转到 Serv00 的注册页面，非常方便。
 
