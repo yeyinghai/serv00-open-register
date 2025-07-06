@@ -8,8 +8,7 @@ import json
 # --- 配置 (保持不变) ---
 URL = 'https://www.serv00.com/'
 BARK_KEY = os.getenv('BARK_KEY')
-# BARK_SERVER_URL = os.getenv('BARK_SERVER_URL')
-BARK_SERVER_URL = "https://nas.yeyhome.com:286"
+BARK_SERVER_URL = os.getenv('BARK_SERVER_URL')
 def send_bark_notification(title, body, url_to_open):
     """通过 Bark 发送推送通知 (此函数无需改动)"""
     if not BARK_KEY:
