@@ -1,10 +1,10 @@
 # .github/workflows/check.yml
 
-name: Check Serv00 Registration Status
+name: 检测Serv00开放注册
 
 on:
   schedule:
-    - cron: '30 * * * *'
+    - cron: '*/15 23 * * *'
   
   workflow_dispatch:
 
@@ -30,4 +30,5 @@ jobs:
         # 核心改动：将环境变量换成 BARK_KEY
         env:
           BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_SERVER_URL: ${{ secrets.BARK_SERVER_URL }}
         run: python checker.py
