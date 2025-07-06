@@ -16,7 +16,7 @@ def send_bark_notification(title, body, url_to_open):
         print("警告: Bark Key 未设置，跳过发送通知。")
         return
     
-    api_url = f"{BARK_SERVER_URL}/{BARK_KEY}"
+    api_url = f"{BARK_SERVER_URL}/{BARK_KEY}/"
     payload = {
         "title": title,
         "body": body,
