@@ -2,7 +2,7 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
 
-一个简单而机器人，用于serv00网站的注册开放情况。它会自动检查开放注册后，通过bark发送警报。
+一个简单而机器人，用于serv00网站的注册开放情况。它会自动检查开放注册后，通过bark开放通知。
 
 ## 1、Fork 或创建仓库
 
