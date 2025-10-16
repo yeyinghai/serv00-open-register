@@ -52,10 +52,10 @@ def check_serv00_status():
         # 1. 寻找包含账户信息的文本区域
         # 我们假设数字位于 "Accounts created on the server" 这段文字附近。
         # 首先，找到包含这段文字的标签。
-        target_element = soup.find('div', class_='hero-content') # Serv00页面通常使用hero-content作为容器
+        target_element = soup.find('div', class_='hero-accounts') # Serv00页面通常使用hero-accounts作为容器
         if not target_element:
-            print("错误: 无法找到 class='hero-content' 的区域。网站结构可能已更改。")
-            send_bark_notification("Serv00脚本错误", "无法找到hero-content，请检查脚本。", URL)
+            print("错误: 无法找到 class='hero-accounts' 的区域。网站结构可能已更改。")
+            send_bark_notification("Serv00脚本错误", "无法找到hero-accounts，请检查脚本。", URL)
             return
 
         search_text = target_element.get_text(strip=True)
