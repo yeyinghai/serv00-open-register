@@ -1,14 +1,17 @@
-# checker.py
 import requests
 import os
-import re # 导入正则表达式模块
+import re
 from bs4 import BeautifulSoup
 import json
 
-# --- 配置 (保持不变) ---
+# --- 配置 ---
 URL = 'https://www.serv00.com/'
 BARK_KEY = os.getenv('BARK_KEY')
-BARK_SERVER_URL = os.getenv('BARK_SERVER_URL')
+BARK_SERVER_URL = os.getenv('BARK_SERVER_URL', 'https://api.day.app') # 添加默认 Bark 服务器地址
+# --- 新增配置 ---
+# 用于存储上一次检测到的账户数量的文件名
+LAST_VALUE_FILE = 'last_accounts.txt'
+
 def send_bark_notification(title, body, url_to_open):
     """通过 Bark 发送推送通知 (此函数无需改动)"""
     if not BARK_KEY:
@@ -33,11 +36,37 @@ def send_bark_notification(title, body, url_to_open):
     except Exception as e:
         print(f"发送 Bark 通知时发生错误: {e}")
 
+def get_last_known_accounts():
+    """从文件中读取上一次记录的账户数量"""
+    try:
+        if os.path.exists(LAST_VALUE_FILE):
+            with open(LAST_VALUE_FILE, 'r') as f:
+                content = f.read().strip()
+                if content:
+                    return int(content)
+    except (IOError, ValueError) as e:
+        print(f"警告: 无法读取或解析旧的账户值文件 ({LAST_VALUE_FILE}): {e}")
+    return None # 如果文件不存在、为空或内容无效，则返回 None
+
+def update_last_known_accounts(value):
+    """将新的账户数量写入文件"""
+    try:
+        with open(LAST_VALUE_FILE, 'w') as f:
+            f.write(str(value))
+        print(f"已将新值 {value} 更新到状态文件 {LAST_VALUE_FILE}")
+    except IOError as e:
+        print(f"错误: 无法写入状态文件: {e}")
+
+
 def check_serv00_status():
     """
-    检查 Serv00.com 的注册状态 (核心逻辑已更新)。
+    检查 Serv00.com 的账户数量，并在数值变化时发送通知。
     """
     print(f"正在检查 URL: {URL} ...")
+    
+    # 1. 读取上一次记录的数值
+    last_known_accounts = get_last_known_accounts()
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
@@ -47,59 +76,63 @@ def check_serv00_status():
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # --- 全新的判断逻辑 ---
-
-        # 1. 寻找包含账户信息的文本区域
-        # 我们假设数字位于 "Accounts created on the server" 这段文字附近。
-        # 首先，找到包含这段文字的标签。
-        target_element = soup.find('div', class_='hero-accounts') # Serv00页面通常使用hero-accounts作为容器
+        # 2. 提取当前网页上的数值 (这部分逻辑与你原有的基本一致)
+        target_element = soup.find('div', class_='hero-accounts')
         if not target_element:
             print("错误: 无法找到 class='hero-accounts' 的区域。网站结构可能已更改。")
             send_bark_notification("Serv00脚本错误", "无法找到hero-accounts，请检查脚本。", URL)
             return
 
         search_text = target_element.get_text(strip=True)
-
-        # 2. 使用正则表达式从文本中提取 "数字 / 数字" 格式
-        # 正则表达式 r'(\d+)\s*/\s*(\d+)' 会匹配 "123/456" 或 "123 / 456" 这样的格式
         match = re.search(r'(\d+)\s*/\s*(\d+)', search_text)
         
         if not match:
             print("错误: 找到了目标区域但无法提取账户数量。网站结构或文本格式可能已更改。")
-            # 打印部分文本用于调试
-            print(f"搜索区域文本片段: {search_text[:250]}...")
             send_bark_notification("Serv00脚本错误", "无法解析账户数量，请检查脚本。", URL)
             return
 
-        # 3. 提取数字并进行比较
         current_accounts = int(match.group(1))
         max_accounts = int(match.group(2))
         
-        print(f"状态: 已成功提取账户数量 -> {current_accounts} / {max_accounts}")
+        print(f"状态: 成功提取到当前值 -> {current_accounts} / {max_accounts}")
+        if last_known_accounts is not None:
+             print(f"记录: 上一次记录的值 -> {last_known_accounts}")
+        else:
+             print(f"记录: 这是第一次运行，无历史记录。")
 
-        # 核心判断：如果两个数字不相等 (通常是 current < max)，则说明有空位
-        if current_accounts < max_accounts:
-            print("判断: 注册已开放！(账户未满)")
-            notification_title = "🎉 Serv00.com 注册开放!"
-            notification_body = f"当前账户: {current_accounts} / {max_accounts}。有名额！"
+        # 3. 核心比较逻辑
+        if last_known_accounts is None:
+            # 首次运行，只记录数值，不发送通知
+            print("首次运行，正在记录初始值...")
+            update_last_known_accounts(current_accounts)
+            # (可选) 如果你希望首次运行时也发送通知，可以取消下面这行注释
+            # send_bark_notification("Serv00监控已启动", f"已记录初始账户数量: {current_accounts}", URL)
+
+        elif current_accounts != last_known_accounts:
+            # 数值发生了变化！
+            print("!!! 数值发生变化 !!!")
+            notification_title = "Serv00 账户数量发生变化！"
+            notification_body = f"账户数量从 {last_known_accounts} 变为 {current_accounts}。\n总限额: {max_accounts}。"
             
             send_bark_notification(
                 title=notification_title,
                 body=notification_body,
                 url_to_open=URL
             )
+            # 更新文件中的值为最新值
+            update_last_known_accounts(current_accounts)
+            
         else:
-            print("判断: 注册已关闭。(账户数量已满或相等)")
+            # 数值未变
+            print("判断: 数值未发生变化。")
 
     except requests.exceptions.RequestException as e:
         print(f"访问网站时发生网络错误: {e}")
         send_bark_notification("Serv00脚本错误", f"无法访问网站: {e}", URL)
     except Exception as e:
-        # 捕获其他可能的错误，例如解析失败
         print(f"处理页面时发生未知错误: {e}")
         send_bark_notification("Serv00脚本严重错误", f"脚本执行时发生意外: {e}", URL)
 
 
 if __name__ == "__main__":
-    # send_bark_notification("测试发送bark", "每次运行都发送", URL)
     check_serv00_status()
