@@ -45,81 +45,79 @@ def update_last_known_accounts(value):
     except IOError as e:
         print(f"错误: 无法写入状态文件: {e}")
 
-# --- 核心函数 (已更新请求头) ---
+# --- 核心函数 (最终版：使用会话Session) ---
 def check_serv00_status():
     """
-    请求正确的 Serv00 数据 API，并使用完整的浏览器请求头来绕过服务器检测。
+    使用 requests.Session 来模拟完整的浏览流程：
+    1. 访问主页以获取会话Cookie。
+    2. 带着Cookie访问API以获取数据。
     """
-    print(f"正在请求 API: {API_URL} ...")
+    print("正在初始化会话...")
     
     last_known_accounts = get_last_known_accounts()
     
-    # --- 全新的、更完整的请求头，伪装成从Chrome浏览器发出的请求 ---
     headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Origin': 'https://www.serv00.com',
-        'Referer': 'https://www.serv00.com/',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     }
     
-    try:
-        response = requests.get(API_URL, headers=headers, timeout=10)
-        # 检查响应状态码，如果是500，就打印更详细的信息
-        if response.status_code == 500:
-            print(f"错误: 服务器返回 500 Internal Server Error。这通常是请求头不被接受导致的。")
-            print(f"服务器响应内容: {response.text[:500]}...") # 打印部分响应内容帮助调试
-            send_bark_notification("Serv00脚本错误", "服务器返回500错误，可能需要更新请求头。", HOME_URL)
-            return
-            
-        response.raise_for_status() # 如果不是2xx成功状态码，则抛出异常
+    # 创建一个Session对象，它会自动处理cookies
+    with requests.Session() as s:
+        s.headers.update(headers) # 将headers应用到整个会话
         
-        data = response.json()
+        try:
+            # --- 步骤 1: 访问主页 "预热"，获取Cookie ---
+            print(f"正在访问主页 {HOME_URL} 以获取会话Cookie...")
+            s.get(HOME_URL, timeout=10).raise_for_status()
+            print("主页访问成功，Cookie已自动存储。")
 
-        # 数据提取逻辑 (与上一版相同)
-        if 'accounts' not in data or 'total' not in data['accounts'] or 'limit' not in data['accounts']:
-            print(f"错误: API返回的数据格式不正确。收到的数据: {data}")
-            send_bark_notification("Serv00脚本错误", "API数据格式有误，请检查脚本。", HOME_URL)
-            return
-
-        current_accounts = int(data['accounts']['total'])
-        max_accounts = int(data['accounts']['limit'])
-
-        # 比较逻辑 (与上一版相同)
-        print(f"状态: 成功从API获取到当前值 -> {current_accounts} / {max_accounts}")
-        if last_known_accounts is not None:
-             print(f"记录: 上一次记录的值 -> {last_known_accounts}")
-        else:
-             print(f"记录: 这是第一次运行，无历史记录。")
-
-        if last_known_accounts is None:
-            print("首次运行，正在记录初始值...")
-            update_last_known_accounts(current_accounts)
-
-        elif current_accounts != last_known_accounts:
-            print("!!! 数值发生变化 !!!")
-            notification_title = "Serv00 账户数量发生变化！"
-            notification_body = f"账户数量从 {last_known_accounts} 变为 {current_accounts}。\n总限额: {max_accounts}。"
+            # --- 步骤 2: 带着Cookie访问API ---
+            print(f"正在请求 API: {API_URL} ...")
+            # 更新Referer和Origin头，因为这次请求是从主页“发起”的
+            api_headers = {'Referer': HOME_URL, 'Origin': 'https://www.serv00.com'}
+            response = s.get(API_URL, headers=api_headers, timeout=10)
             
-            send_bark_notification(
-                title=notification_title,
-                body=notification_body,
-                url_to_open=HOME_URL
-            )
-            update_last_known_accounts(current_accounts)
-            
-        else:
-            print("判断: 数值未发生变化。")
+            response.raise_for_status()
+            data = response.json()
 
-    except requests.exceptions.RequestException as e:
-        print(f"访问API时发生网络错误: {e}")
-        send_bark_notification("Serv00脚本错误", f"无法访问API: {e}", HOME_URL)
-    except json.JSONDecodeError:
-        print(f"错误: 无法解析API返回的JSON数据。服务器响应: {response.text}")
-        send_bark_notification("Serv00脚本错误", "API未返回有效的JSON数据。", HOME_URL)
-    except Exception as e:
-        print(f"处理数据时发生未知错误: {e}")
-        send_bark_notification("Serv00脚本严重错误", f"脚本执行时发生意外: {e}", HOME_URL)
+            # 数据提取逻辑
+            if 'accounts' not in data or 'total' not in data['accounts'] or 'limit' not in data['accounts']:
+                print(f"错误: API返回的数据格式不正确。收到的数据: {data}")
+                send_bark_notification("Serv00脚本错误", "API数据格式有误，请检查脚本。", HOME_URL)
+                return
+
+            current_accounts = int(data['accounts']['total'])
+            max_accounts = int(data['accounts']['limit'])
+
+            # 比较逻辑
+            print(f"状态: 成功从API获取到当前值 -> {current_accounts} / {max_accounts}")
+            if last_known_accounts is not None:
+                 print(f"记录: 上一次记录的值 -> {last_known_accounts}")
+            else:
+                 print(f"记录: 这是第一次运行，无历史记录。")
+
+            if last_known_accounts is None:
+                print("首次运行，正在记录初始值...")
+                update_last_known_accounts(current_accounts)
+
+            elif current_accounts != last_known_accounts:
+                print("!!! 数值发生变化 !!!")
+                notification_title = "Serv00 账户数量发生变化！"
+                notification_body = f"账户数量从 {last_known_accounts} 变为 {current_accounts}。\n总限额: {max_accounts}。"
+                send_bark_notification(title=notification_title, body=notification_body, url_to_open=HOME_URL)
+                update_last_known_accounts(current_accounts)
+                
+            else:
+                print("判断: 数值未发生变化。")
+
+        except requests.exceptions.RequestException as e:
+            print(f"访问时发生网络错误: {e}")
+            send_bark_notification("Serv00脚本错误", f"无法访问网站或API: {e}", HOME_URL)
+        except json.JSONDecodeError:
+            print(f"错误: 无法解析API返回的JSON数据。服务器响应: {response.text}")
+            send_bark_notification("Serv00脚本错误", "API未返回有效的JSON数据。", HOME_URL)
+        except Exception as e:
+            print(f"处理数据时发生未知错误: {e}")
+            send_bark_notification("Serv00脚本严重错误", f"脚本执行时发生意外: {e}", HOME_URL)
 
 if __name__ == "__main__":
     check_serv00_status()
