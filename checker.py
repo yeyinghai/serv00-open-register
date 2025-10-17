@@ -4,9 +4,7 @@ import json
 
 # --- 配置 ---
 API_URL = 'https://panel.serv00.com/api/stats' 
-# API所在的面板主域，我们必须先访问它来获取正确的Cookie
 PANEL_URL = 'https://panel.serv00.com/' 
-# 主页URL仍用于伪造Referer头
 HOME_URL = 'https://www.serv00.com/' 
 
 BARK_KEY = os.getenv('BARK_KEY')
@@ -48,23 +46,24 @@ def update_last_known_accounts(value):
     except IOError as e:
         print(f"错误: 无法写入状态文件: {e}")
 
-# --- 核心函数 (最终版：解决跨域Cookie问题) ---
+# --- 核心函数 (最终版：添加 X-Requested-With 头) ---
 def check_serv00_status():
     """
     终极解决方案：
     1. 访问 API 所在的域 (panel.serv00.com) 以获取其专属的会话Cookie。
-    2. 带着这个正确的Cookie，并伪造Referer头，去访问API。
+    2. 带着Cookie，并添加 X-Requested-With 头，完美模拟AJAX请求。
     """
     print("正在初始化会话...")
     
     last_known_accounts = get_last_known_accounts()
     
-    headers = {
+    # 基础 User-Agent，应用于整个会话
+    base_headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     }
     
     with requests.Session() as s:
-        s.headers.update(headers)
+        s.headers.update(base_headers)
         
         try:
             # --- 步骤 1: 访问面板主域，获取 panel.serv00.com 的专属Cookie ---
@@ -72,10 +71,14 @@ def check_serv00_status():
             s.get(PANEL_URL, timeout=10).raise_for_status()
             print("面板域访问成功，专属Cookie已自动存储。")
 
-            # --- 步骤 2: 带着正确的Cookie访问API ---
+            # --- 步骤 2: 构造完美的API请求头并访问API ---
             print(f"正在请求 API: {API_URL} ...")
-            # 伪造一个看起来合法的Referer头，让服务器以为我们是从主页过来的
-            api_headers = {'Referer': HOME_URL} 
+            
+            # 这是最关键的一步：构建一个包含所有必需信息的请求头
+            api_headers = {
+                'Referer': HOME_URL,
+                'X-Requested-With': 'XMLHttpRequest' # <-- 最终的谜题！
+            } 
             response = s.get(API_URL, headers=api_headers, timeout=10)
             
             response.raise_for_status()
