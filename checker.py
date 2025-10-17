@@ -1,20 +1,27 @@
 import requests
 import os
+import re # 重新启用正则表达式
 import json
+import time
 
-# --- Configuration ---
-API_URL = 'https://panel.serv00.com/api/stats' 
-PANEL_URL = 'https://panel.serv00.com/' 
-HOME_URL = 'https://www.serv00.com/' 
+# 导入 Selenium 相关库
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
 
+# --- 配置 ---
+URL = 'https://www.serv00.com/' # 我们要访问的主页
 BARK_KEY = os.getenv('BARK_KEY')
 BARK_SERVER_URL = os.getenv('BARK_SERVER_URL', 'https://api.day.app')
-LAST_VALUE_FILE = 'last_accounts.txt'
 
-# --- Helper Functions (Unchanged) ---
+# --- 辅助函数 (无需修改) ---
 def send_bark_notification(title, body, url_to_open):
     if not BARK_KEY:
-        print("Warning: Bark Key not set, skipping notification.")
+        print("警告: Bark Key 未设置，跳过发送通知。")
         return
     api_url = f"{BARK_SERVER_URL}/{BARK_KEY}"
     payload = {"title": title, "body": body, "url": url_to_open, "group": "Serv00 Checker"}
@@ -22,109 +29,84 @@ def send_bark_notification(title, body, url_to_open):
     try:
         response = requests.post(api_url, headers=headers, data=json.dumps(payload))
         if response.json().get("code") == 200:
-            print("Bark push notification sent successfully!")
+            print("Bark 推送通知已成功发送！")
         else:
-            print(f"Failed to send Bark notification: {response.text}")
+            print(f"发送 Bark 通知失败: {response.text}")
     except Exception as e:
-        print(f"Error sending Bark notification: {e}")
+        print(f"发送 Bark 通知时发生错误: {e}")
 
-def get_last_known_accounts():
-    try:
-        if os.path.exists(LAST_VALUE_FILE):
-            with open(LAST_VALUE_FILE, 'r') as f:
-                content = f.read().strip()
-                if content: return int(content)
-    except (IOError, ValueError) as e:
-        print(f"Warning: Could not read or parse old accounts file ({LAST_VALUE_FILE}): {e}")
-    return None
-
-def update_last_known_accounts(value):
-    try:
-        with open(LAST_VALUE_FILE, 'w') as f:
-            f.write(str(value))
-        print(f"Updated status file {LAST_VALUE_FILE} with new value: {value}")
-    except IOError as e:
-        print(f"Error: Could not write to status file: {e}")
-
-# --- Core Function (Definitive Version) ---
+# --- 核心函数 (全新 Selenium 版本) ---
 def check_serv00_status():
     """
-    Definitive solution combining all necessary steps:
-    1. Use a Session to manage cookies.
-    2. Visit the API's parent domain (panel.serv00.com) to get the correct session cookie.
-    3. Make the API call with a complete set of browser-mimicking headers,
-       including User-Agent, Referer, X-Requested-With, and the crucial Accept header.
+    使用 Selenium 驱动一个真实的浏览器来加载页面，
+    等待JavaScript执行完毕后，直接从页面读取渲染后的内容。
     """
-    print("Initializing session...")
+    print("正在初始化无头浏览器...")
     
-    last_known_accounts = get_last_known_accounts()
+    # 设置Chrome浏览器选项
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')  # 无头模式，不在屏幕上显示浏览器窗口
+    options.add_argument('--no-sandbox') # 在Linux/Docker环境中运行时需要
+    options.add_argument('--disable-dev-shm-usage') # 解决一些资源限制问题
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
     
-    # Base headers applied to the entire session
-    base_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-    }
-    
-    with requests.Session() as s:
-        s.headers.update(base_headers)
+    # 使用 webdriver-manager 自动安装和配置ChromeDriver
+    driver = None
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
         
-        try:
-            # --- Step 1: Get the correct cookie from the API's domain ---
-            print(f"Visiting panel domain {PANEL_URL} to acquire the correct session cookie...")
-            s.get(PANEL_URL, timeout=15).raise_for_status()
-            print("Panel domain visited successfully, session cookie stored automatically.")
+        print(f"浏览器启动成功，正在访问: {URL} ...")
+        driver.get(URL)
+        
+        # --- 最关键的一步：等待 ---
+        # 等待包含数字的元素加载出来，并变得可见。
+        # 我们等待那个 <strong> 标签，因为它直接包含了 "数字 / 数字"
+        # 最长等待时间为20秒
+        print("页面加载中，等待JavaScript渲染账户数量...")
+        wait = WebDriverWait(driver, 20)
+        # 使用CSS选择器定位元素，这个定位非常精确
+        target_element = wait.until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "div.hero-accounts strong"))
+        )
+        print("目标元素已成功加载！")
+        
+        # 提取渲染后的文本内容
+        rendered_text = target_element.text
+        print(f"成功提取到文本: '{rendered_text}'")
+        
+        # 使用你最初的正则表达式来匹配 "数字 / 数字"
+        match = re.search(r'(\d+)\s*/\s*(\d+)', rendered_text)
+        
+        if not match:
+            print("错误: 成功定位元素，但无法从文本中解析出账户数量。")
+            send_bark_notification("Serv00脚本错误", f"无法解析文本: {rendered_text}", URL)
+            return
 
-            # --- Step 2: Make the API call with the complete, correct headers ---
-            print(f"Requesting API: {API_URL}...")
+        current_accounts = int(match.group(1))
+        max_accounts = int(match.group(2))
+        
+        print(f"状态: 成功解析出账户数量 -> {current_accounts} / {max_accounts}")
+
+        # 核心判断逻辑：如果两个数字不相等，则说明有空位
+        if current_accounts < max_accounts:
+            print("判断: 注册已开放！(账户未满)")
+            notification_title = "🎉 Serv00.com 注册开放!"
+            notification_body = f"当前账户: {current_accounts} / {max_accounts}。有名额！"
+            send_bark_notification(title=notification_title, body=notification_body, url_to_open=URL)
+        else:
+            print("判断: 注册已关闭。(账户已满)")
             
-            # This complete header set is the key to success.
-            api_headers = {
-                'Accept': 'application/json, text/plain, */*', # The final missing piece
-                'Referer': HOME_URL,
-                'X-Requested-With': 'XMLHttpRequest'
-            } 
-            response = s.get(API_URL, headers=api_headers, timeout=15)
-            
-            response.raise_for_status()
-            data = response.json()
-
-            # Data Extraction and Comparison Logic (Unchanged)
-            if 'accounts' not in data or 'total' not in data['accounts'] or 'limit' not in data['accounts']:
-                print(f"Error: API response format is incorrect. Data received: {data}")
-                send_bark_notification("Serv00 Script Error", "API data format is incorrect.", HOME_URL)
-                return
-
-            current_accounts = int(data['accounts']['total'])
-            max_accounts = int(data['accounts']['limit'])
-
-            print(f"Status: Successfully fetched current value from API -> {current_accounts} / {max_accounts}")
-            if last_known_accounts is not None:
-                 print(f"Record: Last known value was -> {last_known_accounts}")
-            else:
-                 print(f"Record: First run, no previous record.")
-
-            if last_known_accounts is None:
-                print("First run, recording initial value...")
-                update_last_known_accounts(current_accounts)
-
-            elif current_accounts != last_known_accounts:
-                print("!!! VALUE HAS CHANGED !!!")
-                notification_title = "Serv00 Account Number Changed!"
-                notification_body = f"Account number changed from {last_known_accounts} to {current_accounts}.\nTotal limit: {max_accounts}."
-                send_bark_notification(title=notification_title, body=notification_body, url_to_open=HOME_URL)
-                update_last_known_accounts(current_accounts)
-                
-            else:
-                print("Judgment: Value has not changed.")
-
-        except requests.exceptions.RequestException as e:
-            print(f"A network error occurred during access: {e}")
-            send_bark_notification("Serv00 Script Error", f"Could not access website or API: {e}", HOME_URL)
-        except json.JSONDecodeError:
-            print(f"Error: Could not parse JSON data from API response. Server response: {response.text}")
-            send_bark_notification("Serv00 Script Error", "API did not return valid JSON.", HOME_URL)
-        except Exception as e:
-            print(f"An unknown error occurred during processing: {e}")
-            send_bark_notification("Serv00 Script Critical Error", f"An unexpected error occurred during execution: {e}", HOME_URL)
+    except TimeoutException:
+        print("错误: 等待元素超时。页面可能未正常加载，或元素结构已改变。")
+        send_bark_notification("Serv00脚本错误", "等待页面元素超时，请检查脚本。", URL)
+    except Exception as e:
+        print(f"发生未知错误: {e}")
+        send_bark_notification("Serv00脚本严重错误", f"脚本执行时发生意外: {e}", URL)
+    finally:
+        if driver:
+            print("正在关闭浏览器...")
+            driver.quit()
 
 if __name__ == "__main__":
     check_serv00_status()
