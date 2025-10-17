@@ -1,19 +1,16 @@
 import requests
 import os
-import json # json库是处理这种数据的标准库
+import json
 
 # --- 配置 ---
-# 我们将直接请求API，而不是主页
-API_URL = 'https://www.serv00.com/freeweb/accounts' 
-# 主页URL仍用于通知中的跳转链接
+API_URL = 'https://panel.serv00.com/api/stats' 
 HOME_URL = 'https://www.serv00.com/' 
 
 BARK_KEY = os.getenv('BARK_KEY')
 BARK_SERVER_URL = os.getenv('BARK_SERVER_URL', 'https://api.day.app')
 LAST_VALUE_FILE = 'last_accounts.txt'
 
-# send_bark_notification, get_last_known_accounts, update_last_known_accounts
-# 这三个辅助函数保持不变，无需修改
+# --- 辅助函数 (无需修改) ---
 def send_bark_notification(title, body, url_to_open):
     if not BARK_KEY:
         print("警告: Bark Key 未设置，跳过发送通知。")
@@ -48,38 +45,47 @@ def update_last_known_accounts(value):
     except IOError as e:
         print(f"错误: 无法写入状态文件: {e}")
 
-# --- 核心函数已重写 ---
+# --- 核心函数 (已更新请求头) ---
 def check_serv00_status():
     """
-    直接请求 Serv00 的数据 API，检查账户数量变化。
-    这种方法更稳定、更高效。
+    请求正确的 Serv00 数据 API，并使用完整的浏览器请求头来绕过服务器检测。
     """
     print(f"正在请求 API: {API_URL} ...")
     
     last_known_accounts = get_last_known_accounts()
     
+    # --- 全新的、更完整的请求头，伪装成从Chrome浏览器发出的请求 ---
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': HOME_URL # 加上Referer头，模拟是主页发起的请求，更保险
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Origin': 'https://www.serv00.com',
+        'Referer': 'https://www.serv00.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     }
     
     try:
-        # 1. 请求API并获取JSON数据
         response = requests.get(API_URL, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json() # 直接将返回的JSON字符串解析为Python字典
+        # 检查响应状态码，如果是500，就打印更详细的信息
+        if response.status_code == 500:
+            print(f"错误: 服务器返回 500 Internal Server Error。这通常是请求头不被接受导致的。")
+            print(f"服务器响应内容: {response.text[:500]}...") # 打印部分响应内容帮助调试
+            send_bark_notification("Serv00脚本错误", "服务器返回500错误，可能需要更新请求头。", HOME_URL)
+            return
+            
+        response.raise_for_status() # 如果不是2xx成功状态码，则抛出异常
+        
+        data = response.json()
 
-        # 2. 从字典中提取数值
-        # 确保API返回的数据包含我们需要的键
-        if 'accounts' not in data or 'limit' not in data:
+        # 数据提取逻辑 (与上一版相同)
+        if 'accounts' not in data or 'total' not in data['accounts'] or 'limit' not in data['accounts']:
             print(f"错误: API返回的数据格式不正确。收到的数据: {data}")
             send_bark_notification("Serv00脚本错误", "API数据格式有误，请检查脚本。", HOME_URL)
             return
 
-        current_accounts = int(data['accounts'])
-        max_accounts = int(data['limit'])
+        current_accounts = int(data['accounts']['total'])
+        max_accounts = int(data['accounts']['limit'])
 
-        # --- 比较逻辑 (保持不变) ---
+        # 比较逻辑 (与上一版相同)
         print(f"状态: 成功从API获取到当前值 -> {current_accounts} / {max_accounts}")
         if last_known_accounts is not None:
              print(f"记录: 上一次记录的值 -> {last_known_accounts}")
@@ -98,7 +104,7 @@ def check_serv00_status():
             send_bark_notification(
                 title=notification_title,
                 body=notification_body,
-                url_to_open=HOME_URL # 跳转链接使用主页URL
+                url_to_open=HOME_URL
             )
             update_last_known_accounts(current_accounts)
             
