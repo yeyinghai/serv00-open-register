@@ -4,6 +4,9 @@ import json
 
 # --- 配置 ---
 API_URL = 'https://panel.serv00.com/api/stats' 
+# API所在的面板主域，我们必须先访问它来获取正确的Cookie
+PANEL_URL = 'https://panel.serv00.com/' 
+# 主页URL仍用于伪造Referer头
 HOME_URL = 'https://www.serv00.com/' 
 
 BARK_KEY = os.getenv('BARK_KEY')
@@ -45,12 +48,12 @@ def update_last_known_accounts(value):
     except IOError as e:
         print(f"错误: 无法写入状态文件: {e}")
 
-# --- 核心函数 (最终版：使用会话Session) ---
+# --- 核心函数 (最终版：解决跨域Cookie问题) ---
 def check_serv00_status():
     """
-    使用 requests.Session 来模拟完整的浏览流程：
-    1. 访问主页以获取会话Cookie。
-    2. 带着Cookie访问API以获取数据。
+    终极解决方案：
+    1. 访问 API 所在的域 (panel.serv00.com) 以获取其专属的会话Cookie。
+    2. 带着这个正确的Cookie，并伪造Referer头，去访问API。
     """
     print("正在初始化会话...")
     
@@ -60,35 +63,33 @@ def check_serv00_status():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
     }
     
-    # 创建一个Session对象，它会自动处理cookies
     with requests.Session() as s:
-        s.headers.update(headers) # 将headers应用到整个会话
+        s.headers.update(headers)
         
         try:
-            # --- 步骤 1: 访问主页 "预热"，获取Cookie ---
-            print(f"正在访问主页 {HOME_URL} 以获取会话Cookie...")
-            s.get(HOME_URL, timeout=10).raise_for_status()
-            print("主页访问成功，Cookie已自动存储。")
+            # --- 步骤 1: 访问面板主域，获取 panel.serv00.com 的专属Cookie ---
+            print(f"正在访问面板域 {PANEL_URL} 以获取正确的会话Cookie...")
+            s.get(PANEL_URL, timeout=10).raise_for_status()
+            print("面板域访问成功，专属Cookie已自动存储。")
 
-            # --- 步骤 2: 带着Cookie访问API ---
+            # --- 步骤 2: 带着正确的Cookie访问API ---
             print(f"正在请求 API: {API_URL} ...")
-            # 更新Referer和Origin头，因为这次请求是从主页“发起”的
-            api_headers = {'Referer': HOME_URL, 'Origin': 'https://www.serv00.com'}
+            # 伪造一个看起来合法的Referer头，让服务器以为我们是从主页过来的
+            api_headers = {'Referer': HOME_URL} 
             response = s.get(API_URL, headers=api_headers, timeout=10)
             
             response.raise_for_status()
             data = response.json()
 
-            # 数据提取逻辑
+            # 数据提取和比较逻辑 (无需修改)
             if 'accounts' not in data or 'total' not in data['accounts'] or 'limit' not in data['accounts']:
                 print(f"错误: API返回的数据格式不正确。收到的数据: {data}")
-                send_bark_notification("Serv00脚本错误", "API数据格式有误，请检查脚本。", HOME_URL)
+                send_bark_notification("Serv00脚本错误", "API数据格式有误。", HOME_URL)
                 return
 
             current_accounts = int(data['accounts']['total'])
             max_accounts = int(data['accounts']['limit'])
 
-            # 比较逻辑
             print(f"状态: 成功从API获取到当前值 -> {current_accounts} / {max_accounts}")
             if last_known_accounts is not None:
                  print(f"记录: 上一次记录的值 -> {last_known_accounts}")
