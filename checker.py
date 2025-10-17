@@ -96,7 +96,8 @@ def check_serv00_status():
             send_bark_notification(title=notification_title, body=notification_body, url_to_open=URL)
         else:
             print("判断: 注册已关闭。(账户已满)")
-            
+            notification_title = "🎉 Serv00.com 注册未开放!"
+            send_bark_notification(title=notification_title)
     except TimeoutException:
         print("错误: 等待元素超时。页面可能未正常加载，或元素结构已改变。")
         send_bark_notification("Serv00脚本错误", "等待页面元素超时，请检查脚本。", URL)
