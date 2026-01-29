@@ -1,49 +1,139 @@
-# .github/workflows/check.yml
-
-name: 检测Serv00开放注册
+name: NodeLoc Auto Checkin
 
 on:
   schedule:
-    - cron: '0 23 * * *'
-  
+    # 每天UTC 8:00运行（北京时间16:00）
+    - cron: '0 8 * * *'
   workflow_dispatch:
+    # 支持手动触发
 
 jobs:
-  run-checker:
-    # 在最新的Ubuntu虚拟机上运行
+  checkin:
     runs-on: ubuntu-latest
 
     steps:
-      # 第一步：检出你的代码
-      # 意思是把你的仓库代码下载到虚拟机里
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 第二步：设置Python环境
-      # 我们指定使用Python 3.9，你也可以用3.10等
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.10'
+          cache: 'pip'
 
-      # 第三步：安装 requirements.txt 中列出的所有Python库
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # 第四步：【最关键】安装Google Chrome浏览器
-      # Selenium需要一个真实的浏览器来驱动
-      - name: Install Google Chrome
+      - name: Install system dependencies
         run: |
           sudo apt-get update
+          sudo apt-get install -y \
+            wget \
+            curl \
+            unzip \
+            xvfb \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libgbm1 \
+            libatspi2.0-0 \
+            libxshmfence1 \
+            libasound2-plugins
+
+      - name: Install Chrome
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update
+          # 安装最新稳定版 Chrome
           sudo apt-get install -y google-chrome-stable
 
-      # 第五步：运行你的Python脚本
-      - name: Run the checker script
-        # 这一步会执行你的 checker.py 文件
-        # 我们通过 env 关键字将GitHub Secrets安全地传递给脚本
-        run: python checker.py
+      - name: Verify Chrome installation
+        run: google-chrome --version
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run NodeLoc Auto Checkin
         env:
-          BARK_KEY: ${{ secrets.BARK_KEY }}
-          BARK_SERVER_URL: ${{ secrets.BARK_SERVER_URL }}
+          NL_COOKIE: ${{ secrets.NL_COOKIE }}
+        run: |
+          # 使用Xvfb在无头模式下运行Chrome
+          Xvfb :99 -screen 0 1920x1080x24 &
+          export DISPLAY=:99
+
+          # 运行签到脚本
+          python main.py
+
+      - name: Upload log file
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkin-log
+          path: checkin.log
+          retention-days: 7
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: 'NodeLoc 签到失败，请检查Cookie配置'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send Bark notification
+        if: always()
+        run: |
+          # 获取运行状态
+          STATUS="${{ job.status }}"
+
+          # 构建消息内容
+          if [ "$STATUS" = "success" ]; then
+            TITLE="✅ NodeLoc 签到成功"
+            BODY="所有账号签到完成，请查看日志"
+          else
+            TITLE="❌ NodeLoc 签到失败"
+            BODY="签到过程中出现错误，请检查Cookie配置"
+          fi
+
+          # 发送Bark通知（如果配置了BARK_KEY）
+          if [ -n "${{ secrets.BARK_KEY }}" ]; then
+            # 构建JSON数据
+            JSON_DATA=$(jq -n \
+              --arg title "$TITLE" \
+              --arg body "$BODY" \
+              '{
+                "title": $title,
+                "body": $body,
+                "automaticallyCopy": true,
+                "copy": $body
+              }')
+
+            # 使用自建服务器或官方服务器
+            if [ -n "${{ secrets.BARK_SERVER }}" ]; then
+              # 自建服务器地址（例如：https://your-server.com）
+              BARK_URL="${{ secrets.BARK_SERVER }}/${{ secrets.BARK_KEY }}"
+            else
+              # 官方服务器
+              BARK_URL="https://api.day.app/${{ secrets.BARK_KEY }}"
+            fi
+
+            # 发送通知
+            echo "发送Bark通知到: $BARK_URL"
+            echo "请求数据: $JSON_DATA"
+            curl -s -w "\nHTTP状态码: %{http_code}\n" "$BARK_URL" \
+              -H "Content-Type: application/json" \
+              -d "$JSON_DATA" \
+              -X POST
+            if [ $? -eq 0 ]; then
+              echo "Bark通知发送成功"
+            else
+              echo "Bark通知发送失败，但不影响主流程"
+            fi
+          else
+            echo "未配置BARK_KEY，跳过Bark通知"
+          fi
