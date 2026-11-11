@@ -24,12 +24,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Install Google Chrome
-        run: |
-          
-          sudo apt-get update
-        
-          sudo apt-get install -y google-chrome-stable
 
       - name: Run the checker script
         run: python checker.py
